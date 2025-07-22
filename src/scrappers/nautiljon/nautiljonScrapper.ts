@@ -1,5 +1,6 @@
 import {NautiljonData, NautiljonFilters, nautiljonSeason} from "./nautiljonInterface";
-import {AxiosClient} from "../../configs/axiosClient";
+import {PuppeteerClient} from "../../configs/puppeteerClient";
+import * as cheerio from "cheerio";
 
 export default class NautiljonScrapper {
 
@@ -61,13 +62,29 @@ export default class NautiljonScrapper {
     }): Promise<NautiljonData[]> {
 
         const url = this.urlBuilder(season, year, options);
-        console.log("url :: " + url);
-        const client = new AxiosClient();
+        console.log(url);
+        const client = new PuppeteerClient();
 
-        const bodyData = await client.get(url);
-        console.log(bodyData.data);
+        const data = await client.get(url);
+        const $ = cheerio.load(data);
 
+        const animes = $('.elt').each((_, element) => {
+            const $anime = $(element);
 
+            const originalTitle = $anime.find('.title > h2 > a').text().trim();
+            const alternativeTitle = $anime.find('.title > p').text().trim();
+
+            const topInfos = $anime.find('.infos_top > .infos > span').not('.border').map((_, el) => $(el).text().trim()).get();
+
+            const tags = $anime.find('.infos_top > .tagsList > a').map((_, el) => $(el).text().trim()).get();
+
+            let videoUrl = $anime.find('a').attr('href')?.trim();
+            videoUrl = videoUrl?.startsWith('https://') ? videoUrl : undefined;
+
+            const description = $anime.find('.texte').text().trim();
+
+            const bottomInfos = $anime.find('.infos2 > span').
+        });
         return [];
     }
 }
