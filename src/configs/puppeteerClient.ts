@@ -1,4 +1,4 @@
-import puppeteer, {Browser} from 'puppeteer-core';
+import puppeteer, {Browser, Page} from 'puppeteer-core';
 
 export interface PuppeteerClientOptions {
     delayMinMs?: number;
@@ -7,23 +7,22 @@ export interface PuppeteerClientOptions {
 }
 
 export class PuppeteerClient {
+    private browser?: Browser;
+    private page?: Page;
+    private pageCount = 0;
+
     private readonly delayMin: number;
     private readonly delayMax: number;
     private readonly userAgents: string[];
     private uaIndex = 0;
-    private browser?: Browser;
 
     constructor(private opts: PuppeteerClientOptions = {}) {
-        this.delayMin = opts.delayMinMs ?? 300;
-        this.delayMax = opts.delayMaxMs ?? 800;
-
+        this.delayMin = opts.delayMinMs ?? 1000;
+        this.delayMax = opts.delayMaxMs ?? 1500;
         this.userAgents = this.shuffle([
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:124.0) Gecko/20100101 Firefox/124.0',
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36 Edg/123.0.2420.81',
-            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
-            'Mozilla/5.0 (Macintosh; Intel Mac OS X 14.4; rv:124.0) Gecko/20100101 Firefox/124.0',
-            'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4_1) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4.1 Safari/605.1.15'
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64)...Chrome/123',
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64)...Firefox/124',
+            // … autres UA
         ]);
     }
 
@@ -43,7 +42,7 @@ export class PuppeteerClient {
 
     private async delay() {
         const ms = this.delayMin + Math.random() * (this.delayMax - this.delayMin);
-        return new Promise(resolve => setTimeout(resolve, ms));
+        return new Promise(res => setTimeout(res, ms));
     }
 
     private async ensureBrowser(): Promise<Browser> {
@@ -51,33 +50,65 @@ export class PuppeteerClient {
             this.browser = await puppeteer.launch({
                 headless: true,
                 executablePath: this.opts.executablePath ?? '/opt/homebrew/bin/chromium',
-                args: ['--no-sandbox', '--disable-setuid-sandbox']
+                args: ['--no-sandbox', '--disable-setuid-sandbox'],
+                userDataDir: undefined
             });
         }
         return this.browser;
     }
 
-    public async get(url: string): Promise<string> {
-        await this.delay();
+    private async initPage(): Promise<Page> {
         const browser = await this.ensureBrowser();
-        const page = await browser.newPage();
 
-        const ua = this.nextUA();
-        await page.setUserAgent(ua);
-        await page.setViewport({ width: 1280, height: 800 });
+        if (!this.page) {
+            this.page = await browser.newPage();
+            await this.page.setRequestInterception(true);
+            this.page.on('request', req => {
+                const type = req.resourceType();
+                if (['image', 'stylesheet', 'font'].includes(type)) {
+                    req.abort();
+                } else {
+                    req.continue();
+                }
+            });
+        }
 
-        // Charger la page et attendre que le réseau soit inactif
-        await page.goto(url, { waitUntil: 'networkidle2', timeout: 60000 });
+        // reset page every 200 scrapes to avoid fuites mémoire
+        if (++this.pageCount > 200) {
+            await this.page.close();
+            this.page = await browser.newPage();
+            this.pageCount = 1;
+            await this.page.setRequestInterception(true);
+            this.page.on('request', req => {
+                const type = req.resourceType();
+                if (['image', 'stylesheet', 'font'].includes(type)) {
+                    req.abort();
+                } else {
+                    req.continue();
+                }
+            });
+        }
 
-        const content = await page.content();
-        await page.close();
-        return content;
+        return this.page;
     }
 
-    public async close() {
+    public async get(url: string): Promise<string> {
+        await this.delay();
+        const page = await this.initPage();
+
+        await page.setUserAgent(this.nextUA());
+        await page.setViewport({ width: 1280, height: 800 });
+
+        await page.goto(url, { waitUntil: 'networkidle2', timeout: 60000 });
+        return await page.content();
+    }
+
+    public async close(): Promise<void> {
         if (this.browser) {
             await this.browser.close();
             this.browser = undefined;
+            this.page = undefined;
+            this.pageCount = 0;
         }
     }
 }

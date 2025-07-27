@@ -6,11 +6,11 @@ import customParseFormat from 'dayjs/plugin/customParseFormat';
 
 dayjs.extend(customParseFormat);
 
-export default class NautiljonScrapper {
+export default abstract class NautiljonScrapper {
 
     private static url: string = "https://www.nautiljon.com";
 
-    private urlBuilder(
+    private static urlBuilder(
         season: nautiljonSeason,
         year: number,
         options: NautiljonFilters
@@ -54,10 +54,10 @@ export default class NautiljonScrapper {
         const filter = filterMap[options.filter] ?? filterMap.all;
         const simulcast = simulcastMap[options.simulcast] ?? "";
 
-        return `${NautiljonScrapper.url}/animes/${season}-${year}.html?y=${trailer}&tri=${sort}&public_averti=${filter}&simulcast=${simulcast}`;
+        return `${NautiljonScrapper.url}/animes/${season}-${year}.html?y=${trailer}&tri=${sort}&public_averti=${filter}&simulcast=${simulcast}&format=${format}`;
     }
 
-    async getPageData(season: nautiljonSeason, year: number, options: NautiljonFilters = {
+    static async getPageData(season: nautiljonSeason, year: number, options: NautiljonFilters = {
         filter: "all",
         kind: "all",
         sort: "startDate",
@@ -66,9 +66,7 @@ export default class NautiljonScrapper {
     }): Promise<NautiljonData[]> {
 
         const url = this.urlBuilder(season, year, options);
-        const client = new PuppeteerClient({
-            executablePath: '/snap/bin/chromium'
-        });
+        const html = await PuppeteerClient.cl
 
         const data = await client.get(url);
         const $ = cheerio.load(data);

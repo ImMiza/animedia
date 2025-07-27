@@ -1,3 +1,4 @@
-import NautiljonScrapper from "./scrappers/nautiljon/nautiljonScrapper";
+import NautiljonExecute from "./scrappers/nautiljon/nautiljonExecute";
 
-new NautiljonScrapper().getPageData("été", 2024).then(value => console.log(value));
+console.log('start scrapping !');
+NautiljonExecute.initAllScrapping().then(_ => console.log('end scrapping !'));
