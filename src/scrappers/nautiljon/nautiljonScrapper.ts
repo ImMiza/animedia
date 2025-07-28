@@ -64,11 +64,8 @@ export default abstract class NautiljonScrapper {
         trailer: "all",
         simulcast: "all"
     }): Promise<NautiljonData[]> {
-
         const url = this.urlBuilder(season, year, options);
-        const html = await PuppeteerClient.cl
-
-        const data = await client.get(url);
+        const data = await PuppeteerClient.get(url);
         const $ = cheerio.load(data);
 
         return $('.elt').map((_, element) => {

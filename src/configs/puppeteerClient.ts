@@ -6,27 +6,50 @@ export interface PuppeteerClientOptions {
     executablePath?: string;
 }
 
-export class PuppeteerClient {
-    private browser?: Browser;
-    private page?: Page;
-    private pageCount = 0;
+export abstract class PuppeteerClient {
+    private static browser?: Browser;
+    private static page?: Page;
 
-    private readonly delayMin: number;
-    private readonly delayMax: number;
-    private readonly userAgents: string[];
-    private uaIndex = 0;
+    private static delayMin: number;
+    private static delayMax: number;
+    private static userAgents: string[];
+    private static uaIndex = 0;
 
-    constructor(private opts: PuppeteerClientOptions = {}) {
+    static async init(opts: PuppeteerClientOptions = {}): Promise<void> {
         this.delayMin = opts.delayMinMs ?? 1000;
         this.delayMax = opts.delayMaxMs ?? 1500;
         this.userAgents = this.shuffle([
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64)...Chrome/123',
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64)...Firefox/124',
-            // … autres UA
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Ubuntu Chromium/37.0.2062.94 Chrome/37.0.2062.94 Safari/537.36",
+            "Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/45.0.2454.85 Safari/537.36",
+            "Mozilla/5.0 (Windows NT 6.1; WOW64; Trident/7.0; rv:11.0) like Gecko",
+            "Mozilla/5.0 (Windows NT 6.1; WOW64; rv:40.0) Gecko/20100101 Firefox/40.0",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_5) AppleWebKit/600.8.9 (KHTML, like Gecko) Version/8.0.8 Safari/600.8.9",
         ]);
+
+        if (!this.browser) {
+            this.browser = await puppeteer.launch({
+                headless: true,
+                executablePath: opts.executablePath ?? '/opt/homebrew/bin/chromium',
+                args: ['--no-sandbox', '--disable-setuid-sandbox'],
+                userDataDir: undefined
+            });
+
+            this.page = await this.browser.newPage();
+        }
     }
 
-    private shuffle(arr: string[]): string[] {
+    private static async delay() {
+        const ms = this.delayMin + Math.random() * (this.delayMax - this.delayMin);
+        return new Promise(res => setTimeout(res, ms));
+    }
+
+    private static nextUA(): string {
+        const ua = this.userAgents[this.uaIndex];
+        this.uaIndex = (this.uaIndex + 1) % this.userAgents.length;
+        return ua;
+    }
+
+    private static shuffle(arr: string[]): string[] {
         for (let i = arr.length - 1; i > 0; i--) {
             const j = Math.floor(Math.random() * (i + 1));
             [arr[i], arr[j]] = [arr[j], arr[i]];
@@ -34,81 +57,32 @@ export class PuppeteerClient {
         return arr;
     }
 
-    private nextUA(): string {
-        const ua = this.userAgents[this.uaIndex];
-        this.uaIndex = (this.uaIndex + 1) % this.userAgents.length;
-        return ua;
+    static isAlreadyInit(): boolean {
+        return !!this.browser;
     }
 
-    private async delay() {
-        const ms = this.delayMin + Math.random() * (this.delayMax - this.delayMin);
-        return new Promise(res => setTimeout(res, ms));
-    }
-
-    private async ensureBrowser(): Promise<Browser> {
-        if (!this.browser) {
-            this.browser = await puppeteer.launch({
-                headless: true,
-                executablePath: this.opts.executablePath ?? '/opt/homebrew/bin/chromium',
-                args: ['--no-sandbox', '--disable-setuid-sandbox'],
-                userDataDir: undefined
-            });
-        }
-        return this.browser;
-    }
-
-    private async initPage(): Promise<Page> {
-        const browser = await this.ensureBrowser();
+    static async get(url: string): Promise<string> {
+        await this.delay();
 
         if (!this.page) {
-            this.page = await browser.newPage();
-            await this.page.setRequestInterception(true);
-            this.page.on('request', req => {
-                const type = req.resourceType();
-                if (['image', 'stylesheet', 'font'].includes(type)) {
-                    req.abort();
-                } else {
-                    req.continue();
-                }
-            });
+            throw new Error("The puppeteer browser doesn't initialized");
         }
 
-        // reset page every 200 scrapes to avoid fuites mémoire
-        if (++this.pageCount > 200) {
+        await this.page.setUserAgent(this.nextUA());
+        await this.page.setViewport({ width: 1280, height: 800 });
+
+        await this.page.goto(url, { waitUntil: 'networkidle2', timeout: 60000 });
+        return await this.page.content();
+    }
+
+    public static async close(): Promise<void> {
+        if (this.page && !this.page.isClosed()) {
             await this.page.close();
-            this.page = await browser.newPage();
-            this.pageCount = 1;
-            await this.page.setRequestInterception(true);
-            this.page.on('request', req => {
-                const type = req.resourceType();
-                if (['image', 'stylesheet', 'font'].includes(type)) {
-                    req.abort();
-                } else {
-                    req.continue();
-                }
-            });
+            this.page = undefined;
         }
-
-        return this.page;
-    }
-
-    public async get(url: string): Promise<string> {
-        await this.delay();
-        const page = await this.initPage();
-
-        await page.setUserAgent(this.nextUA());
-        await page.setViewport({ width: 1280, height: 800 });
-
-        await page.goto(url, { waitUntil: 'networkidle2', timeout: 60000 });
-        return await page.content();
-    }
-
-    public async close(): Promise<void> {
-        if (this.browser) {
+        if (this.browser && this.browser.connected) {
             await this.browser.close();
             this.browser = undefined;
-            this.page = undefined;
-            this.pageCount = 0;
         }
     }
 }
