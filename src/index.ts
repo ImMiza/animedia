@@ -1,17 +1,25 @@
 import dotenv from 'dotenv'
 import path from 'path';
 import 'dotenv/config';
-import { Client, GatewayIntentBits, Events, MessageFlags } from 'discord.js';
+import {Client, GatewayIntentBits, Events, MessageFlags} from 'discord.js';
 import {discordCommands} from "./scripts/commands/commandManager";
-dotenv.config({ path: path.resolve(__dirname, '.env') });
+import InitService from "./services/init.service";
+import {AppDataSource} from "./configs/database";
 
-/*
+dotenv.config({path: path.resolve(__dirname, '.env')});
 
- */
+export let services: InitService;
+
+AppDataSource.initialize().then((datasource) => {
+    services = new InitService(datasource);
+})
+    .catch((err) => {
+        console.log(err);
+        process.exit(1);
+    })
 
 
-
-const client = new Client({ intents: [GatewayIntentBits.Guilds] });
+const client = new Client({intents: [GatewayIntentBits.Guilds]});
 
 client.once(Events.ClientReady, ready => {
     console.log(`✅ Connecté en tant que ${ready.user.tag}`);
@@ -40,7 +48,7 @@ client.on(Events.InteractionCreate, async interaction => {
         await command.execute(interaction);
     } catch (error) {
         console.error('Erreur exécution commande:', error);
-        const replyData = { content: '⚠️ Une erreur est survenue.' };
+        const replyData = {content: '⚠️ Une erreur est survenue.'};
         if (interaction.replied || interaction.deferred) {
             await interaction.followUp(replyData);
         } else {
