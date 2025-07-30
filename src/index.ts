@@ -6,7 +6,7 @@ import {discordCommands} from "./scripts/commands/commandManager";
 import InitService from "./services/init.service";
 import {AppDataSource} from "./configs/database";
 
-dotenv.config({path: path.resolve(__dirname, '.env')});
+dotenv.config({ path: 'src/.env' });
 
 export let services: InitService;
 
